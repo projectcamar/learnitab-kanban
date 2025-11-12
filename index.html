@@ -1,5 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Learnitab Kanban</title>
 <link href="https://unpkg.com/tailwindcss@^1.0/dist/tailwind.min.css" rel="stylesheet">
- <script src="https://cdn.jsdelivr.net/gh/alpinejs/alpine@v2.3.5/dist/alpine.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/alpinejs/alpine@v2.3.5/dist/alpine.min.js" defer></script>
+<script>
+  // Force reload on version change
+  const APP_VERSION = '2.0.0';
+  const storedVersion = localStorage.getItem('TG-app-version');
+  if (storedVersion !== APP_VERSION) {
+    console.log('New version detected, clearing cache...');
+    localStorage.setItem('TG-app-version', APP_VERSION);
+    // Force reload from server
+    if (storedVersion) {
+      window.location.reload(true);
+    }
+  }
+</script>
 <style>
 		[x-cloak] {
 			display: none;
@@ -163,10 +185,34 @@
                   </div>
                   <p class="text-gray-500 text-xs mt-1">Upload a custom banner image (max 2MB)</p>
                   
-                  <!-- Preview uploaded image -->
+                  <!-- Preview current banner -->
                   <div x-show="uploadedBannerImage" class="mt-3">
-                    <p class="text-gray-700 text-sm mb-2">Preview:</p>
+                    <p class="text-gray-700 text-sm mb-2">Current Banner:</p>
                     <img :src="uploadedBannerImage" alt="Banner preview" class="rounded-lg shadow-md" style="max-height: 150px; object-fit: cover;">
+                  </div>
+                  
+                  <!-- Banner Gallery -->
+                  <div class="mt-4" x-show="bannerGallery.length > 0">
+                    <label class="text-gray-800 block mb-2 font-bold text-sm">Saved Banners Gallery</label>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <template x-for="(banner, index) in bannerGallery" :key="index">
+                        <div class="relative group">
+                          <img :src="banner" 
+                               @click="selectBannerFromGallery(index)" 
+                               :class="uploadedBannerImage === banner ? 'ring-4 ring-blue-500' : ''"
+                               class="rounded-lg shadow-md cursor-pointer hover:opacity-80 transition-opacity" 
+                               style="height: 100px; width: 100%; object-fit: cover;">
+                          <button type="button" 
+                                  @click.stop="removeBannerFromGallery(index)" 
+                                  class="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </template>
+                    </div>
+                    <p class="text-gray-500 text-xs mt-2">Click on a banner to use it. Hover to remove.</p>
                   </div>
                 </div>
               </div>
@@ -495,6 +541,7 @@
         username: '',
         bannerImage: '',
         uploadedBannerImage: '',
+        bannerGallery: [],
         colors: [{
             label: '#3182ce',
             value: 'blue'
@@ -594,6 +641,7 @@
           this.username = localStorage.getItem('TG-username') || '';
           this.bannerImage = localStorage.getItem('TG-bannerImage') || '';
           this.uploadedBannerImage = localStorage.getItem('TG-uploadedBanner') || '';
+          this.bannerGallery = JSON.parse(localStorage.getItem('TG-bannerGallery')) || [];
           this.colorSelected = themeFromLocalStorage || {
             label: '#3182ce',
             value: 'blue'
@@ -661,6 +709,7 @@
           localStorage.setItem('TG-theme', theme);
           localStorage.setItem('TG-bannerImage', this.bannerImage);
           localStorage.setItem('TG-uploadedBanner', this.uploadedBannerImage);
+          localStorage.setItem('TG-bannerGallery', JSON.stringify(this.bannerGallery));
           localStorage.setItem('TG-dateDisplay', this.dateDisplay);
           // Show Flash message
           this.dispatchCustomEvents('flash', 'Settings updated');
@@ -688,10 +737,24 @@
           // Convert to base64
           const reader = new FileReader();
           reader.onload = (e) => {
-            this.uploadedBannerImage = e.target.result;
+            const imageData = e.target.result;
+            this.uploadedBannerImage = imageData;
+            
+            // Add to gallery if not already there
+            if (!this.bannerGallery.includes(imageData)) {
+              this.bannerGallery.unshift(imageData); // Add to beginning of array
+              
+              // Limit gallery to 12 images
+              if (this.bannerGallery.length > 12) {
+                this.bannerGallery = this.bannerGallery.slice(0, 12);
+              }
+              
+              localStorage.setItem('TG-bannerGallery', JSON.stringify(this.bannerGallery));
+            }
+            
             // Clear the URL input since we're using uploaded image
             this.bannerImage = '';
-            this.dispatchCustomEvents('flash', 'Banner image uploaded');
+            this.dispatchCustomEvents('flash', 'Banner image uploaded and saved to gallery');
           };
           reader.onerror = () => {
             this.dispatchCustomEvents('flash', 'Error reading file');
@@ -703,7 +766,24 @@
           // Clear file input
           const fileInput = document.querySelector('input[type="file"]');
           if (fileInput) fileInput.value = '';
-          this.dispatchCustomEvents('flash', 'Uploaded banner cleared');
+          this.dispatchCustomEvents('flash', 'Current banner cleared');
+        },
+        selectBannerFromGallery(index) {
+          this.uploadedBannerImage = this.bannerGallery[index];
+          this.bannerImage = ''; // Clear URL banner
+          this.dispatchCustomEvents('flash', 'Banner selected from gallery');
+        },
+        removeBannerFromGallery(index) {
+          const removedBanner = this.bannerGallery[index];
+          this.bannerGallery.splice(index, 1);
+          localStorage.setItem('TG-bannerGallery', JSON.stringify(this.bannerGallery));
+          
+          // If the removed banner was the current one, clear it
+          if (this.uploadedBannerImage === removedBanner) {
+            this.uploadedBannerImage = '';
+          }
+          
+          this.dispatchCustomEvents('flash', 'Banner removed from gallery');
         },
         onDragStart(event, uuid) {
           event.dataTransfer.setData('text/plain', uuid);
@@ -931,3 +1011,4 @@
   </script>
 
 </body>
+</html>
